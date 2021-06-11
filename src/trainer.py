@@ -1074,35 +1074,38 @@ class EncDecTrainer(Trainer):
             src_x, src_len, src_langs = to_cuda(src_x, src_len, src_langs)
             ref_x, ref_len, ref_langs = to_cuda(ref_x, ref_len, ref_langs)
 
-            # evaluation mode
-            self.encoder.eval()
-            self.decoder.eval()
+            with torch.no_grad():
+                # evaluation mode
+                self.encoder.eval()
+                self.decoder.eval()
 
-            # encode source sentence and translate it
-            src_enc = _encoder('fwd', x=src_x, lengths=src_len, langs=src_langs, causal=False)
-            src_enc = src_enc.transpose(0, 1)
-            ref_enc = _encoder('fwd', x=ref_x, lengths=ref_len, langs=ref_langs, causal=False)
-            ref_enc = ref_enc.transpose(0, 1)
-            max_len = int(1.3 * ((src_len.max().item() + ref_len.max().item())//2) + 5)
-            tgt_x, tgt_len = _decoder.ra_generate(src_enc, src_len, ref_enc, ref_len, tgt_lang_id, max_len=max_len)
-            tgt_langs = tgt_x.clone().fill_(tgt_lang_id)
+                # encode source sentence and translate it
+                src_enc = _encoder('fwd', x=src_x, lengths=src_len, langs=src_langs, causal=False)
+                src_enc = src_enc.transpose(0, 1)
+                ref_enc = _encoder('fwd', x=ref_x, lengths=ref_len, langs=ref_langs, causal=False)
+                ref_enc = ref_enc.transpose(0, 1)
+                max_len = int(1.3 * ((src_len.max().item() + ref_len.max().item())//2) + 5)
+                tgt_x, tgt_len = _decoder.ra_generate(src_enc, src_len, ref_enc, ref_len, tgt_lang_id, max_len=max_len)
+                tgt_langs = tgt_x.clone().fill_(tgt_lang_id)
 
-            # free CUDA memory, reset graph
-            self.decoder.zero_grad()
-            if back:
-                self.encoder.zero_grad()
+                # free CUDA memory
                 del src_enc
                 del ref_enc
 
-            # training mode
-            self.encoder.train()
-            self.decoder.train()
+                # training mode
+                self.encoder.train()
+                self.decoder.train()
 
             if not back:
+                src_enc = _encoder('fwd', x=src_x, lengths=src_len, langs=src_langs, causal=False)
+                src_enc = src_enc.transpose(0, 1)
+                ref_enc = _encoder('fwd', x=ref_x, lengths=ref_len, langs=ref_langs, causal=False)
+                ref_enc = ref_enc.transpose(0, 1)
+
                 dec_src_tgt = self.decoder('fwd', x=tgt_x, lengths=tgt_len, langs=tgt_langs, causal=True, src_enc=src_enc, src_len=src_len)
-                del src_enc
+                # del src_enc
                 dec_ref_tgt = self.decoder('fwd', x=tgt_x, lengths=tgt_len, langs=tgt_langs, causal=True, src_enc=ref_enc, src_len=ref_len)
-                del ref_enc
+                # del ref_enc
 
                 # words to predict
                 alen = torch.arange(tgt_len.max(), dtype=torch.long, device=tgt_len.device)
@@ -1111,7 +1114,7 @@ class EncDecTrainer(Trainer):
 
                 _, src_loss = self.decoder('predict', tensor=dec_src_tgt, pred_mask=pred_mask, y=tgt_y, get_scores=False, smoothing=True)
                 _, ref_loss = self.decoder('predict', tensor=dec_ref_tgt, pred_mask=pred_mask, y=tgt_y, get_scores=False, smoothing=True)
-                loss = src_loss + ref_loss
+                loss = (src_loss + ref_loss)/2
             if back:
                 # encode generate sentence
                 tgt_enc = self.encoder('fwd', x=tgt_x, lengths=tgt_len, langs=tgt_langs, causal=False)
@@ -1122,16 +1125,16 @@ class EncDecTrainer(Trainer):
                 alen = torch.arange(src_len.max(), dtype=torch.long, device=src_len.device)
                 pred_mask = alen[:, None] < src_len[None] - 1  # do not predict anything given the last target word
                 src_y = src_x[1:].masked_select(pred_mask[:-1])
-                _, src_loss = self.decoder('predict', tensor=dec_tgt_src, pred_mask=pred_mask, y=src_y, get_scores=False)
+                _, src_loss = self.decoder('predict', tensor=dec_tgt_src, pred_mask=pred_mask, y=src_y, get_scores=False, smoothing=True)
                 
                 # decode to ref
                 dec_tgt_ref = self.decoder('fwd', x=ref_x, lengths=ref_len, langs=ref_langs, causal=True, src_enc=tgt_enc, src_len=tgt_len)
                 alen = torch.arange(ref_len.max(), dtype=torch.long, device=ref_len.device)
                 pred_mask = alen[:, None] < ref_len[None] - 1  # do not predict anything given the last target word
                 ref_y = ref_x[1:].masked_select(pred_mask[:-1])
-                _, ref_loss = self.decoder('predict', tensor=dec_tgt_ref, pred_mask=pred_mask, y=ref_y, get_scores=False)
+                _, ref_loss = self.decoder('predict', tensor=dec_tgt_ref, pred_mask=pred_mask, y=ref_y, get_scores=False, smoothing=True)
 
-                loss = src_loss + ref_loss
+                loss = (src_loss + ref_loss)/2
             
             if back:
                 self.stats[('RABT-%s-%s-%s' % (src_lang, tgt_lang, ref_lang))].append(loss.item())
