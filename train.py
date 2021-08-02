@@ -192,6 +192,8 @@ def get_parser():
                         help="RA-translation steps. src-tgt-ref = ref-tgt-src")
     parser.add_argument("--rabt_steps", type=str, default="",
                         help="RA-back-translation steps. src-tgt-ref = ref-tgt-src")
+    parser.add_argument("--dsa_steps", type=str, default="",
+                        help="Dataset alignment steps. Work in progress.")
 
     # reload a pretrained model
     parser.add_argument("--reload_model", type=str, default="",
@@ -224,15 +226,22 @@ def get_parser():
                         help="Master port (for multi-node SLURM jobs)")
 
     # added steps
-    parser.add_argument("--tie_lang_embs", type=bool_flag, default=False,
-                        help="Average hsb and dsb")
     parser.add_argument("--add_mt_noise", type=bool_flag, default=False,
                         help="Add noise to src during MT steps")
+    parser.add_argument("--tie_lang_embs", type=str, default="",
+                        help="Tie language embeddings for two langs")
     parser.add_argument("--transfer_vocab", type=str, default="",
                         help="Path to bidict file for vocab transfer")
+    parser.add_argument("--avg_vocab", type=bool_flag, default=False,
+                        help="Average the vocab transfer")
+    parser.add_argument("--transfer_pred", type=bool_flag, default=False,
+                        help="transfer pred layer")
     parser.add_argument("--extra_eval_langs", type=str, default="",
                         help="Lang pairs to evaluate on when they aren't explicitly trained")
-
+    parser.add_argument("--dont_eval_langs", type=str, default="",
+                        help="Lang pairs to not evaluate on when they are trained")
+    # parser.add_argument("--hard_tie", type=bool_flag, default=True,
+    #                     help="Whether the tie stays through training or not")
     return parser
 
 
@@ -347,6 +356,10 @@ def main(params):
             # ra back-translation steps
             for lang1, lang2, lang3 in shuf_order(params.rabt_steps):
                 trainer.rat_step(lang1, lang2, lang3, True, params.lambda_bt)
+
+            # dsa steps
+            for lang1, lang2 in shuf_order(params.dsa_steps):
+                trainer.dsa_step(lang1, lang2, 1)
 
             trainer.iter()
 

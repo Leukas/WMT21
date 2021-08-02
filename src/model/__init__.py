@@ -82,16 +82,25 @@ def set_pretrain_emb(model, dico, word2id, embeddings):
     logger.info("Pretrained %i/%i words (%.3f%%)."
                 % (n_found, len(dico), 100. * n_found / len(dico)))
 
-def transfer_embs(params, dico, embs):
+def transfer_vocab(params, dico, embs, pred_layer=None):
     src_idxs = []
     tgt_idxs = []
     with open(params.transfer_vocab, 'r', encoding='utf8') as file:
         for line in file:
-            src, tgt = line.split("\t")[:2]  
-            src_idxs.append(dico.word2id[src])
-            tgt_idxs.append(dico.word2id[tgt])
+            src, tgt = line.split("\t")[:2]
+            if src in dico.word2id and tgt in dico.word2id:
+                src_idxs.append(dico.word2id[src])
+                tgt_idxs.append(dico.word2id[tgt])
     with torch.no_grad():
         embs.weight[src_idxs] = embs.weight[tgt_idxs]
+
+        if pred_layer is not None:
+            # swap_weight = pred_layer.weight[src_idxs]
+            # swap_bias = pred_layer.bias[src_idxs]
+            pred_layer.weight[src_idxs] = pred_layer.weight[tgt_idxs]
+            pred_layer.bias[src_idxs] = pred_layer.bias[tgt_idxs]
+            # pred_layer.weight[tgt_idxs] = swap_weight
+            # pred_layer.bias[tgt_idxs] = swap_bias
         # embs.weight[src_idxs] += embs.weight[tgt_idxs]
         # embs.weight[src_idxs] /= 2
         
@@ -125,7 +134,7 @@ def build_model(params, dico):
         logger.info("Number of parameters (model): %i" % sum([p.numel() for p in model.parameters() if p.requires_grad]))
 
         if params.transfer_vocab:
-            transfer_embs(params, dico, model.embeddings)
+            transfer_vocab(params, dico, model.embeddings, model.pred_layer.proj if params.transfer_pred else None)
 
         return model.cuda()
 
@@ -146,7 +155,12 @@ def build_model(params, dico):
                 enc_reload = enc_reload['model' if 'model' in enc_reload else 'encoder']
                 if all([k.startswith('module.') for k in enc_reload.keys()]):
                     enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
-                encoder.load_state_dict(enc_reload)
+
+                # lang_embs = torch.nn.Embedding(5, 1024)
+                # lang_embs.weight[:4] = enc_reload['lang_embeddings.weight']
+                # enc_reload['lang_embeddings.weight'] = lang_embs.weight
+                # enc_reload['lang_embeddings.weight'] = torch.cat(enc_reload['lang_embeddings.weight'], 
+                encoder.load_state_dict(enc_reload, strict=False)
 
             # reload decoder
             if dec_path != '':
@@ -155,11 +169,16 @@ def build_model(params, dico):
                 dec_reload = dec_reload['model' if 'model' in dec_reload else 'decoder']
                 if all([k.startswith('module.') for k in dec_reload.keys()]):
                     dec_reload = {k[len('module.'):]: v for k, v in dec_reload.items()}
+
+                # lang_embs = torch.nn.Embedding(5, 1024)
+                # lang_embs.weight[:4] = dec_reload['lang_embeddings.weight']
+                # dec_reload['lang_embeddings.weight'] = lang_embs.weight
+
                 decoder.load_state_dict(dec_reload, strict=False)
 
         if params.transfer_vocab:
-            transfer_embs(params, dico, encoder.embeddings)
-            transfer_embs(params, dico, decoder.embeddings)
+            transfer_vocab(params, dico, encoder.embeddings, encoder.pred_layer.proj if params.transfer_pred else None)
+            transfer_vocab(params, dico, decoder.embeddings, decoder.pred_layer.proj if params.transfer_pred else None)
 
 
         logger.debug("Encoder: {}".format(encoder))

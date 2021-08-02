@@ -18,18 +18,36 @@ N_MAX_POSITIONS = 512  # maximum input sequence length
 
 logger = getLogger()
 
+class LabelSmoothedCrossEntropyLoss(nn.Module):
+    """ From https://github.com/facebookresearch/UnsupervisedMT """
+    def __init__(self, eps, padding_idx=None, size_average=True, weight=None):
+        super().__init__()
+        self.eps = eps
+        self.padding_idx = padding_idx
+        self.size_average = size_average
+        self.register_buffer('weight', weight)
 
-
-class SmoothedXELoss(nn.Module):    
-    def __init__(self, smoothing=0.0):
-        super(SmoothedXELoss, self).__init__()
-        self.smoothing = smoothing
-    
     def forward(self, input, target):
-        log_prob = F.log_softmax(input, dim=-1)
-        weight = input.new_ones(input.size()) * self.smoothing / (input.size(-1) - 1.0)
-        weight.scatter_(-1, target.unsqueeze(-1), (1.0 - self.smoothing))
-        loss = (-weight * log_prob).sum(dim=-1).mean()
+        lprobs = F.log_softmax(input, dim=-1)
+        target = target.view(-1, 1)
+
+        nll_loss = -lprobs.gather(dim=-1, index=target)
+        smooth_loss = -lprobs.sum(dim=-1, keepdim=True)
+        if self.padding_idx is not None:
+            non_pad_mask = target.ne(self.padding_idx)
+            nll_loss = nll_loss[non_pad_mask]
+            smooth_loss = smooth_loss[non_pad_mask]
+
+        if self.size_average:
+            nll_loss = nll_loss.mean()
+            smooth_loss = smooth_loss.mean()
+        else:
+            nll_loss = nll_loss.sum()
+            smooth_loss = smooth_loss.sum()
+
+        eps_i = self.eps / lprobs.size(-1)
+        loss = (1. - self.eps) * nll_loss + eps_i * smooth_loss
+
         return loss
 
 def Embedding(num_embeddings, embedding_dim, padding_idx=None):
@@ -103,9 +121,9 @@ class PredLayer(nn.Module):
         self.pad_index = params.pad_index
         dim = params.emb_dim
 
-        if hasattr(params, 'rat_steps') and len(params.rat_steps) > 0:
+        if hasattr(params, 'rat_steps') and len(params.rat_steps) > 0 and hasattr(params, 'rabt_steps') and len(params.rabt_steps) > 0:
             self.smoothing = 0.1
-            self.smoothie = SmoothedXELoss(self.smoothing)
+            self.smoothie = LabelSmoothedCrossEntropyLoss(self.smoothing, params.pad_index)
 
         if params.asm is False:
             self.proj = Linear(dim, params.n_words, bias=True)

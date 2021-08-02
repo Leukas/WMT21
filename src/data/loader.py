@@ -312,6 +312,8 @@ def check_data_params(params):
     # back machine translation steps 
     params.bmt_steps = [tuple(s.split('-')) for s in params.bmt_steps.split(',') if len(s) > 0]
 
+    params.dsa_steps = [tuple(s.split('-')) for s in params.dsa_steps.split(',') if len(s) > 0]
+
     # denoising auto-encoder steps
     params.ae_steps = [s for s in params.ae_steps.split(',') if len(s) > 0]
     assert all([lang in params.langs for lang in params.ae_steps])
@@ -320,6 +322,7 @@ def check_data_params(params):
     
 
     params.extra_eval_langs = [s.split('-') for s in params.extra_eval_langs.split(',') if len(s) > 0]
+    params.dont_eval_langs = [s.split('-') for s in params.dont_eval_langs.split(',') if len(s) > 0]
     # mass steps
     # params.mass_steps = [s for s in params.mass_steps.split(',') if len(s) > 0]
     # mass_steps = []
@@ -363,7 +366,9 @@ def check_data_params(params):
     required_para = required_para_train | set([(l2, l3) for _, l2, l3 in params.bt_steps])
 
     if len(params.extra_eval_langs) > 0:
-        required_para = required_para | set(params.extra_eval_langs)
+        required_para = required_para | set([(l1, l2) for l1, l2 in params.extra_eval_langs])
+    if len(params.dont_eval_langs) > 0:
+        required_para = required_para - set([(l1, l2) for l1, l2 in params.dont_eval_langs])
     params.para_dataset = {
         (src, tgt): {
             splt: (os.path.join(params.data_path, '%s.%s-%s.%s.pth' % (splt, src, tgt, src)),

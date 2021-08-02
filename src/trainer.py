@@ -94,6 +94,7 @@ class Trainer(object):
             [('BMT-%s-%s' % (l1, l2), []) for l1, l2 in params.bmt_steps] +
             [('MA-%s' % l, []) for l in params.langs] +
             [('MA-%s-%s' % (l1, l2), []) for l1, l2 in params.mass_steps] +
+            [('DS-%s-%s' % (l1, l2), []) for l1, l2 in params.dsa_steps] +
             [('BT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.bt_steps] + 
             [('XBT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.xbt_steps] +
             [('RAT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.rat_steps] +
@@ -164,8 +165,9 @@ class Trainer(object):
 
     def tie_lang_embs(self):
         if hasattr(self.params, 'tie_lang_embs') and self.params.tie_lang_embs:
-            self.encoder.tie_lang_embs(self.params.lang2id["dsb"], self.params.lang2id["hsb"])
-            self.decoder.tie_lang_embs(self.params.lang2id["dsb"], self.params.lang2id["hsb"])
+            to_lang, from_lang = self.params.tie_lang_embs.split(",")
+            self.encoder.tie_lang_embs(self.params.lang2id[to_lang], self.params.lang2id[from_lang])
+            self.decoder.tie_lang_embs(self.params.lang2id[to_lang], self.params.lang2id[from_lang])
 
 
     def print_stats(self):
@@ -913,6 +915,64 @@ class EncDecTrainer(Trainer):
         self.n_sentences += params.batch_size
         self.stats['processed_s'] += len2.size(0)
         self.stats['processed_w'] += (len2 - 1).sum().item()
+
+    def dsa_step(self, lang1, lang2, lambda_coeff):
+        """
+        Dataset alignment step.
+        """
+        # if self.n_total_iter % 2 != 0:
+        #     return
+
+        assert lambda_coeff >= 0
+        if lambda_coeff == 0:
+            return
+        params = self.params
+        self.encoder.train()
+        self.decoder.train()
+
+        lang1_id = params.lang2id[lang1]
+        lang2_id = params.lang2id[lang2]
+
+        enc1_sum = torch.zeros(params.emb_dim).cuda()
+        enc2_sum = torch.zeros(params.emb_dim).cuda()
+
+        n_batches = 10
+
+        for i in range(n_batches):
+            # generate batch
+            x1, len1 = self.get_batch('mass', lang1)
+            x2, len2 = self.get_batch('mass', lang2)
+
+            langs1 = x1.clone().fill_(lang1_id)
+            langs2 = x2.clone().fill_(lang2_id)
+
+            # cuda
+            x1, len1, langs1, x2, len2, langs2 = to_cuda(x1, len1, langs1, x2, len2, langs2)
+
+            # encode source sentence
+            enc1 = self.encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
+            # print(enc1.size())
+            enc1_sum += enc1.mean(dim=0).mean(dim=0)
+
+            with torch.no_grad():
+                enc2 = self.encoder('fwd', x=x2, lengths=len2, langs=langs2, causal=False)
+                # print(enc2.size())
+                enc2_sum += enc2.mean(dim=0).mean(dim=0)
+
+        # loss = F.cosine_embedding_loss(enc1_sum.unsqueeze(0), enc2_sum.unsqueeze(0), torch.ones(1))
+        loss = F.mse_loss(enc1_sum.unsqueeze(0)/n_batches, enc2_sum.unsqueeze(0)/n_batches)
+        # loss
+        self.stats[('DS-%s-%s' % (lang1, lang2))].append(loss.item())
+        loss = lambda_coeff * loss
+
+        # optimize
+        self.optimize(loss, ['encoder', 'decoder'])
+
+        # number of processed sentences / words
+        self.n_sentences += params.batch_size * n_batches
+        self.stats['processed_s'] += len2.size(0)
+        self.stats['processed_w'] += (len2 - 1).sum().item()
+
 
     def bt_step(self, lang1, lang2, lang3, lambda_coeff):
         """

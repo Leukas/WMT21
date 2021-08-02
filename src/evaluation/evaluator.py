@@ -79,7 +79,7 @@ class Evaluator(object):
             _lang1, _lang2 = (lang1, lang2) if lang1 < lang2 else (lang2, lang1)
             iterator = self.data['para'][(_lang1, _lang2)][data_set].get_iterator(
                 shuffle=False,
-                group_by_size=True,
+                group_by_size=False,
                 n_sentences=n_sentences
             )
 
@@ -166,6 +166,9 @@ class Evaluator(object):
         params = self.params
         scores = OrderedDict({'epoch': trainer.epoch})
 
+        if params.eval_only:
+            self.trainer.tie_lang_embs()
+
         with torch.no_grad():
 
             for data_set in ['valid', 'test']:
@@ -190,7 +193,9 @@ class Evaluator(object):
 
                 all_steps = set(params.mt_steps + [(l2, l3) for _, l2, l3 in params.bt_steps] + params.mass_steps)
                 if len(params.extra_eval_langs) > 0:
-                    all_steps = all_steps | set(params.extra_eval_langs)
+                    all_steps = all_steps | set([(l1, l2) for l1, l2 in params.extra_eval_langs])
+                if len(params.dont_eval_langs) > 0:
+                    all_steps = all_steps - set([(l1, l2) for l1, l2 in params.dont_eval_langs])
     
                 for lang1, lang2 in all_steps:
                     if lang2 is not None:

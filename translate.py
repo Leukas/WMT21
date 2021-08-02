@@ -24,6 +24,7 @@ import torch
 from src.utils import AttrDict
 from src.utils import bool_flag, initialize_exp
 from src.data.dictionary import Dictionary
+from src.model import transfer_vocab
 from src.model.transformer import TransformerModel
 
 from src.fp16 import network_to_half
@@ -50,12 +51,20 @@ def get_parser():
     parser.add_argument("--beam", type=int, default=1, help="Beam size")
     parser.add_argument("--length_penalty", type=float, default=1, help="length penalty")
 
+    parser.add_argument("--max_len", type=int, default=-1, help="Maximum length (-1 to disable)")
+
     # parser.add_argument("--max_vocab", type=int, default=-1, help="Maximum vocabulary size (-1 to disable)")
     # parser.add_argument("--min_count", type=int, default=0, help="Minimum vocabulary count")
 
     # source language / target language
     parser.add_argument("--src_lang", type=str, default="", help="Source language")
     parser.add_argument("--tgt_lang", type=str, default="", help="Target language")
+
+    parser.add_argument("--tie_lang_embs", type=str, default="",
+                        help="Tie language embeddings for two langs")
+    parser.add_argument("--transfer_vocab", type=str, default="",
+                        help="Path to bidict file for vocab transfer")
+
 
     return parser
 
@@ -85,6 +94,16 @@ def main(params):
     params.src_id = model_params.lang2id[params.src_lang]
     params.tgt_id = model_params.lang2id[params.tgt_lang]
 
+    if params.transfer_vocab:
+        transfer_vocab(params, dico, encoder.embeddings)
+        transfer_vocab(params, dico, decoder.embeddings)
+
+
+    if hasattr(params, 'tie_lang_embs') and params.tie_lang_embs:
+        to_lang, from_lang = params.tie_lang_embs.split(",")
+        encoder.tie_lang_embs(model_params.lang2id[to_lang], model_params.lang2id[from_lang])
+        decoder.tie_lang_embs(model_params.lang2id[to_lang], model_params.lang2id[from_lang])
+
     # float16
     if params.fp16:
         assert torch.backends.cudnn.enabled
@@ -94,8 +113,13 @@ def main(params):
     # read sentences from stdin
     src_sent = []
     for line in sys.stdin.readlines():
-        assert len(line.strip().split()) > 0
-        src_sent.append(line)
+        line_spl = line.strip().split()
+        assert len(line_spl) > 0
+        if len(line_spl) > params.max_len and params.max_len > 0:
+            src_sent.append(" ".join(line_spl[:params.max_len]))
+        else:
+            src_sent.append(line)
+
     logger.info("Read %i sentences from stdin. Translating ..." % len(src_sent))
 
     f = io.open(params.output_path, 'w', encoding='utf-8')
@@ -117,14 +141,15 @@ def main(params):
         # encode source batch and translate it
         encoded = encoder('fwd', x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
         encoded = encoded.transpose(0, 1)
+        max_len = min(int(1.5 * lengths.max().item() + 10), 512)
         if params.beam == 1:
-            decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=int(1.5 * lengths.max().item() + 10))
+            decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=max_len)
         else:
             decoded, dec_lengths = decoder.generate_beam(
                 encoded, lengths.cuda(), params.tgt_id, beam_size=params.beam,
                 length_penalty=params.length_penalty,
                 early_stopping=False,
-                max_len=int(1.5 * lengths.max().item() + 10))
+                max_len=max_len)
 
         # convert sentences to words
         for j in range(decoded.size(1)):
