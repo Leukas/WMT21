@@ -5,7 +5,7 @@ Lukas Edman, Ahmet Üstün, Antonio Toral, and Gertjan van Noord. 2021. Unsuperv
 
 ### Requirements
 - Python 3 (tested on 3.7.9)
-- PyTorch (tested on 1.7.1)
+- [PyTorch](https://pytorch.org/) (tested on 1.7.1)
 - [Moses](https://github.com/moses-smt/mosesdecoder)
 - [fastBPE](https://github.com/glample/fastBPE)
 - [fastText](https://github.com/facebookresearch/fastText)
@@ -15,6 +15,7 @@ Lukas Edman, Ahmet Üstün, Antonio Toral, and Gertjan van Noord. 2021. Unsuperv
 Prior to training, you will need to preprocess the data following the format expected from MASS. 
 
 For training steps 1, 2, and 4-6, the file ```extra/mass_steps.sh``` can be run, provided the paths in the first few lines are updated. For example, step 1 can be run as such:
+
 ```extra/mass_steps.sh step1```
 
 #### Vocab Transfer
