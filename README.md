@@ -55,4 +55,5 @@ python get_bidict_lev.py \
 ```
 
 These bidicts are then used in step 4, or in any step by providing 2 arguments to MASS's ```train.py```:
+
 ```--tie_lang_embs "dsb,hsb" --transfer_vocab bidict.dsb-hsb```
