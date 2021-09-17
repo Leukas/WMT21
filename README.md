@@ -1,7 +1,10 @@
 # WMT21
-This repo hosts the code for University of Groningen's submission to the WMT21 Unsupervised MT Task for German--Lower Sorbian translation. Our code consists of modifications to the [MASS](https://github.com/microsoft/MASS) model, scripts for our novel vocabulary transfer method, and scripts for running our 6 step process described in our paper: 
+This repo hosts the code for University of Groningen's submission to the WMT21 Unsupervised MT Task for German--Lower Sorbian translation. Our code consists of modifications to the [MASS](https://github.com/microsoft/MASS) model, scripts for our novel vocabulary transfer method, and scripts for running our 6 step process described in our paper (which will be published in November at WMT2021): 
 
-Lukas Edman, Ahmet Üstün, Antonio Toral, and Gertjan van Noord. 2021. Unsupervised Translation of German–Lower Sorbian: Exploring Training and Transfer Methods on a Low-Resource Language. (Submitted)
+Lukas Edman, Ahmet Üstün, Antonio Toral, and Gertjan van Noord. 2021. Unsupervised Translation of German–Lower Sorbian: Exploring Training and Transfer Methods on a Low-Resource Language. _Proceedings of the Sixth Conference on Machine Translation._ (Accepted)
+
+In the preliminary results from the task organizers, our system ranked tied first place for Lower Sorbian→German (according to BERTScore) and third for German→Lower Sorbian (according to BLEU).
+
 
 ### Requirements
 - Python 3 (tested on 3.7.9)
